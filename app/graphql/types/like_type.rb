@@ -1,10 +1,7 @@
 module Types
   class LikeType < Types::BaseObject
     field :id, ID, null: false
-    field :user, Types::UserType, null: false
 
-    def user
-      object.user
-    end
+    association_field :user, type: Types::UserType, null: true
   end
 end

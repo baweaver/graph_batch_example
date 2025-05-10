@@ -3,9 +3,6 @@ module Types
     field :id, ID, null: false
     field :name, String, null: true
 
-    field :profile, Types::ProfileType, null: false
-    def profile
-      object.profile
-    end
+    association_field :profile, type: Types::ProfileType, null: true
   end
 end
