@@ -1,24 +1,48 @@
 # README
 
-This README would normally document whatever steps are necessary to get the
-application up and running.
+Experimental repo to test GraphQL batch loading patterns.
 
-Things you may want to cover:
+## Sample Query
 
-* Ruby version
+Try this out in local [GraphiQL](http://127.0.0.1:3000/graphiql):
 
-* System dependencies
+```
+{
+  posts {
+    id
+    title
+    comments {
+      id
+      body
+      author {
+        id
+        name
+        profile {
+          id
+          bio
+        }
+      }
+      post {
+        id
+        title
+        comments {
+          id
+          likes {
+            id
+            user {
+              id
+              name
+            }
+          }
+        }
+      }
+    }
+    tags {
+      id
+      name
+    }
+  }
+}
+```
 
-* Configuration
-
-* Database creation
-
-* Database initialization
-
-* How to run the test suite
-
-* Services (job queues, cache servers, search engines, etc.)
-
-* Deployment instructions
-
-* ...
+It should have ~22 queries if this works properly. Need to add tests to verify
