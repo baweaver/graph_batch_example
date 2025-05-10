@@ -8,7 +8,7 @@ Bundler.require(*Rails.groups)
 
 module GraphBatch
   class Application < Rails::Application
-    ArLazyPreload.config.auto_preload = true
+    # ArLazyPreload.config.auto_preload = true
 
     config.active_record.query_log_tags_enabled = true
     config.active_record.query_log_tags = [
