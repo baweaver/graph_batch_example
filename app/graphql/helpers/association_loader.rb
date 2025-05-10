@@ -6,8 +6,8 @@ module Helpers
       define_method(name) do |lookahead:|
         context
           .dataloader
-          .with(Loaders::AssociationDataloaderWithLookahead, name, lookahead)
-          .load(object)
+          .with(Loaders::AssociationDataloaderWithLookahead, name)
+          .load_with_lookahead(object, lookahead)
       end
     end
   end

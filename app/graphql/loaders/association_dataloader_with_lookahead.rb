@@ -1,100 +1,80 @@
-# app/graphql/loaders/association_dataloader_with_lookahead.rb
-# frozen_string_literal: true
-
 module Loaders
   class AssociationDataloaderWithLookahead < GraphQL::Dataloader::Source
-    def initialize(association_name, lookahead)
+    def initialize(association_name)
       @association_name = association_name.to_sym
-      @lookahead = lookahead
+      @object_to_lookahead = {}
+    end
+
+    # Custom loader that saves lookahead per object
+    def load_with_lookahead(record, lookahead)
+      @object_to_lookahead[record] = lookahead
+      load(record)
     end
 
     def fetch(records)
       grouped = records.group_by(&:class)
 
-      preload_spec = build_preload(@lookahead)
-
-      Rails.logger.info do
-        "AssociationDataloader: preloading #{@association_name} with preload spec: #{preload_spec.inspect}"
-      end
-
       grouped.each do |model_class, model_records|
-        reflection = model_class.reflect_on_association(@association_name)
+        preload_spec = build_combined_preload(model_records)
 
-        unless reflection
-          raise ArgumentError, "Association #{@association_name} not found on #{model_class.name}"
-        end
+        Rails.logger.debug("[Preload] #{@association_name} for #{model_class.name}: #{preload_spec.inspect}")
 
-        # Polymorphic handling: group by reflection's klass if polymorphic
-        if reflection.polymorphic?
-          Rails.logger.info "AssociationDataloader: handling polymorphic association #{@association_name} for #{model_class.name}"
+        unique_records = deduplicate_by_id(model_records)
 
-          # Further group records by their associated type
-          model_records.group_by { |record| record.public_send(reflection.foreign_type) }.each do |type_name, type_records|
-            next if type_name.nil?
-
-            type_class = type_name.safe_constantize
-            next unless type_class
-
-            unique_records = deduplicate_by_id(type_records)
-            preload_for(type_class, unique_records, preload_spec)
-          end
-        else
-          unique_records = deduplicate_by_id(model_records)
-          preload_for(model_class, unique_records, preload_spec)
-        end
+        ActiveRecord::Associations::Preloader
+          .new(records: unique_records, associations: preload_spec)
+          .call
       end
 
-      # Return the root association result for each record
-      records.map do |record|
-        record.public_send(@association_name)
-      end
+      records.map { |record| record.public_send(@association_name) }
     end
 
     private
 
     def deduplicate_by_id(records)
-      records.each_with_object({}) do |record, result|
-        id = record.id
-        next if id.nil?
-        result[id] ||= record
-      end.values
+      records.index_by(&:id).values
     end
 
-    def preload_for(model_class, records, preload_spec)
-      Rails.logger.info "AssociationDataloader: preloading for #{model_class.name} with #{records.size} records and spec: #{preload_spec.inspect}"
-      ActiveRecord::Associations::Preloader.new(records:, associations: preload_spec).call
+    def build_combined_preload(records)
+      lookaheads = records.map { |r| @object_to_lookahead[r] }.compact
+
+      preloads = lookaheads.map { |la| build_preload_tree(la) }.uniq
+
+      preloads.reduce { |merged, next_tree| deep_merge_preloads(merged, next_tree) }
     end
 
-    # Recursively builds preload spec from lookahead
-    def build_preload(lookahead)
-      return @association_name if lookahead.nil?
+    def build_preload_tree(lookahead)
+      return @association_name unless lookahead&.selection(@association_name)
 
-      child_preloads = lookahead.selection(@association_name)&.selections&.each_with_object({}) do |selection, result|
-        next unless association?(selection)
-        nested_preload = build_preload_for_selection(selection)
-        result[selection.name.to_sym] = nested_preload if nested_preload
-      end
+      children = lookahead
+        .selection(@association_name)
+        .selections
+        .select(&:selections) # fields with sub-selections
+        .each_with_object({}) do |selection, result|
+          result[selection.name.to_sym] = build_preload_for_selection(selection)
+        end
 
-      if child_preloads&.any?
-        { @association_name => child_preloads }
-      else
-        @association_name
-      end
+      children.any? ? { @association_name => children } : @association_name
     end
 
     def build_preload_for_selection(selection)
-      sub_preloads = selection.selections.each_with_object({}) do |sub_selection, result|
-        next unless association?(sub_selection)
-        deeper_preload = build_preload_for_selection(sub_selection)
-        result[sub_selection.name.to_sym] = deeper_preload if deeper_preload
-      end
-
-      sub_preloads.any? ? sub_preloads : {}
+      selection
+        .selections
+        .select(&:selections) # nested object fields
+        .each_with_object({}) do |sub, result|
+          result[sub.name.to_sym] = build_preload_for_selection(sub)
+        end
     end
 
-    # Heuristic: treat as association if it has sub-selections (likely an object type)
-    def association?(selection)
-      selection.selections.any?
+    def deep_merge_preloads(left, right)
+      return right if left == right || left.nil?
+      return left if right.nil?
+
+      if left.is_a?(Hash) && right.is_a?(Hash)
+        left.merge(right) { |_, lv, rv| deep_merge_preloads(lv, rv) }
+      else
+        right
+      end
     end
   end
 end
