@@ -117,8 +117,6 @@ module Helpers
       ).void
     end
     def association_connection(name, type:, null: false, max_page_size: nil, scoped: nil, **options, &block)
-      connection_class = GraphQL::Pagination::ActiveRecordRelationConnection
-
       # Define a Relay-style connection field (e.g., `comments_connection`)
       field "#{name}_connection", type.connection_type, null: null, **options do
         instance_eval(&block) if block
