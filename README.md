@@ -1,10 +1,47 @@
 # README
 
-Experimental repo to test GraphQL batch loading patterns.
+This repository demonstrates advanced GraphQL patterns in a Ruby on Rails application, focusing on efficient data loading, lookahead optimization, and flexible field definitions.
 
-## Stupid Flags
+## Overview
 
-This is intended as a stand-in for any more mature product:
+The application models a blogging platform with entities like `Author`, `Post`, `Comment`, `Profile`, and `Like`. It leverages GraphQL-Ruby's dataloader, lookahead features, and custom helpers to optimize query performance and maintain a clean schema design.
+
+## Key GraphQL Patterns
+
+### 1. Association Dataloader with Lookahead
+
+The `AssociationDataloaderWithLookahead` class extends `GraphQL::Dataloader::Source` to batch-load ActiveRecord associations efficiently. It utilizes GraphQL's lookahead feature to determine which nested associations to preload, reducing N+1 query issues.
+
+**Highlights:**
+
+- **Lookahead Usage:** Captures the fields requested in a query to determine necessary preloads.
+- **Batch Loading:** Groups records by class and deduplicates them by ID before preloading.
+- **Deep Merge:** Combines multiple lookahead trees into a single preload specification.
+
+### 2. Scoped Connection Loader
+
+The `ScopedConnectionLoader` class also extends `GraphQL::Dataloader::Source` and is designed for loading associations with additional scoping, such as filtering or ordering.
+
+**Highlights:**
+
+- **Custom Scoping:** Accepts a `scope_proc` to apply custom scopes to the base ActiveRecord relation.
+- **Connection Support:** Returns a `GraphQL::Pagination::Connections::BaseConnection` for pagination support.
+
+### 3. Association Loader Helpers
+
+The `Helpers::AssociationLoader` module provides methods to define GraphQL fields that utilize the custom dataloaders.
+
+**Methods:**
+
+- `association_field`: Defines a field that uses `AssociationDataloaderWithLookahead`.
+- `flagged_association_field`: Conditionally uses the dataloader based on a feature flag.
+- `association_connection`: Defines a connection field with optional scoping and pagination.
+
+### 4. Feature Flags with StupidFlags
+
+The `StupidFlags` module simulates feature flagging, allowing conditional logic in field definitions.
+
+**Example:**
 
 ```ruby
 module StupidFlags
@@ -18,7 +55,16 @@ module StupidFlags
 end
 ```
 
-The loader will be on when the flag is on.
+This enables toggling between different data loading strategies without altering the schema.
+
+## Testing and Validation
+
+The `spec/graphql/loaders/association_dataloader_with_lookahead_spec.rb` file contains integration tests that validate the behavior of the custom loaders and helpers. These tests ensure that:
+
+- Nested associations are eagerly loaded based on lookahead.
+- Pagination works correctly with connections.
+- Spam comments are filtered out appropriately.
+- Edge cases, such as posts with no comments or authors without profiles, are handled gracefully.
 
 ## Sample Query
 
