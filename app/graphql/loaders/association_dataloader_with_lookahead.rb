@@ -16,13 +16,42 @@
 # enabling you to preload them efficiently (e.g., via ActiveRecord `.includes` or `preload`).
 #
 module Loaders
+  module BatchedPreloader
+    MAX_BATCH_SIZE = 500
+
+    def self.preload(records:, associations:)
+      Rails.logger.debug(
+        "[BatchedPreloader] Trying to preload #{records.size} records"
+      )
+
+      Rails.logger.debug(
+        "[BatchedPreloader] Trying to load tree: #{JSON.pretty_generate(associations)}"
+      )
+
+      records.each_slice(MAX_BATCH_SIZE) do |batch|
+        ActiveRecord::Associations::Preloader.new(
+          records: batch,
+          associations: associations
+        ).call
+      end
+    end
+  end
+
   class AssociationDataloaderWithLookahead < GraphQL::Dataloader::Source
     extend T::Sig
 
-    sig { params(association_name: T.any(String, Symbol)).void }
-    def initialize(association_name)
+    sig do
+      params(
+        association_name: T.any(String, Symbol),
+        context: T.untyped
+      ).void
+    end
+    def initialize(association_name, context:)
       @association_name = association_name.to_sym
+      @context = context
+
       @object_to_lookahead = T.let({}, T::Hash[ActiveRecord::Base, GraphQL::Execution::Lookahead])
+      @already_preloaded = T.let(Set.new, T::Set[Integer])
     end
 
     # Called by field resolvers to register lookahead info and defer loading.
@@ -38,7 +67,15 @@ module Loaders
       )
     end
     def load_with_lookahead(record, lookahead)
+      context_visited = context[:visited_lookahead_paths] ||= Set.new
+      path_key = [ record.class.name, @association_name ].join(".")
+
+      # Prevent re-visiting nodes
+      return load(record) if context_visited.include?(path_key)
+
+      context_visited << path_key
       @object_to_lookahead[record] = lookahead
+
       load(record)
     end
 
@@ -56,6 +93,11 @@ module Loaders
       grouped.each do |model_class, model_records|
         # Nested association hash of what we need to preload
         preload_spec = build_combined_preload(model_records)
+
+        # Prevent reloading of the same pattern
+        key = [ model_class.name, preload_spec ].hash
+        next if @already_preloaded.include?(key)
+        @already_preloaded << key
 
         Rails.logger.debug(
           "[Preload] #{@association_name} for #{model_class.name}: #{preload_spec.inspect}"
@@ -80,13 +122,10 @@ module Loaders
         # is useful when you do not control the original query and want to load
         # associations lazily after the fact, especitlaly in cases where you
         # want to dynamically compute them like when using lookaheads.
-        ActiveRecord::Associations::Preloader
-          .new(records: unique_records, associations: preload_spec)
-          .call.tap do
-            Rails.logger.debug(
-              "[Preloader] Preloaded #{preload_spec} for #{records.first.class.name}"
-            )
-          end
+        BatchedPreloader.preload(
+          records: unique_records,
+          associations: preload_spec
+        )
       end
 
       # Return the preloaded associations
@@ -114,32 +153,40 @@ module Loaders
     end
     def build_combined_preload(records)
       lookaheads = records.map { |r| @object_to_lookahead[r] }.compact
-      preloads = lookaheads.map { |la| build_preload_tree(la) }.uniq
 
+      return @association_name if lookaheads.empty?
+
+      preloads = lookaheads.map { |la| build_preload_tree(la, path: []) }.uniq
       preloads.reduce { |merged, next_tree| deep_merge_preloads(merged, next_tree) }
     end
 
     # Builds a preload structure from the lookahead selections.
     sig do
       params(
-        lookahead: GraphQL::Execution::Lookahead
+        lookahead: GraphQL::Execution::Lookahead,
+        path: T::Array[Symbol]
       ).returns(
         # Preload specification for ActiveRecord, similar to `build_combined_preload`'s
         # signature
         T.untyped
       )
     end
-    def build_preload_tree(lookahead)
+    def build_preload_tree(lookahead, path: [])
       # If the top-level association isn’t being queried, return symbol
       return @association_name unless lookahead.selection(@association_name)
+      return nil if path.include?(@association_name)
 
       # Recursively extract nested selection trees for the association
+      current_path = path + [ @association_name ]
       children = lookahead
         .selection(@association_name)
         .selections
         .select(&:selections)
         .each_with_object({}) do |selection, result|
-          result[selection.name.to_sym] = build_preload_for_selection(selection)
+          result[selection.name.to_sym] = build_preload_for_selection(
+            selection,
+            path: current_path
+          )
         end
 
       # Similar to the above, return the symbol if there's no nesting here
@@ -149,18 +196,28 @@ module Loaders
     # Recursively builds nested preload trees from lookahead selection objects
     sig do
       params(
-        selection: GraphQL::Execution::Lookahead
+        selection: GraphQL::Execution::Lookahead,
+        path: T::Array[Symbol]
       ).returns(
         # nested preload tree
         T::Hash[Symbol, T.untyped]
       )
     end
-    def build_preload_for_selection(selection)
+    def build_preload_for_selection(selection, path: [])
+      current_path = path + [ @association_name ]
+
       selection
         .selections
         .select(&:selections)
         .each_with_object({}) do |sub, result|
-          result[sub.name.to_sym] = build_preload_for_selection(sub)
+          # Skip any cases where this path has already been
+          # traversed
+          next if path.include?(sub.name.to_sym)
+
+          result[sub.name.to_sym] = build_preload_for_selection(
+            sub,
+            path: current_path
+          )
         end
     end
 
@@ -184,5 +241,8 @@ module Loaders
 
     sig { returns(Symbol) }
     attr_reader :association_name
+
+    sig { returns(T.untyped) }
+    attr_reader :context
   end
 end

@@ -32,7 +32,7 @@ module Helpers
         # Enqueue the association to be preloaded using the dataloader, passing
         # the current object and lookahead.
         context.dataloader
-          .with(Loaders::AssociationDataloaderWithLookahead, name)
+          .with(Loaders::AssociationDataloaderWithLookahead, name, context:)
           .load_with_lookahead(object, lookahead)
       end
     end
@@ -76,7 +76,7 @@ module Helpers
       define_method(name) do |lookahead:, **args|
         if StupidFlags.enabled?(:association_loader)
           context.dataloader
-            .with(Loaders::AssociationDataloaderWithLookahead, name)
+            .with(Loaders::AssociationDataloaderWithLookahead, name, context:)
             .load_with_lookahead(object, lookahead)
         else
           # Fall back to the explicitly passed method if the flag is off.

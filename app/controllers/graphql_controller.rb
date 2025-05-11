@@ -7,6 +7,7 @@ class GraphqlController < ApplicationController
   # protect_from_forgery with: :null_session
 
   around_action :log_sql_queries
+  around_action :track_active_record_instantiations
 
   def log_sql_queries
     count = 0
@@ -18,7 +19,21 @@ class GraphqlController < ApplicationController
       yield
     end
 
-    Rails.logger.info("GraphQL query made #{count} SELECT queries")
+    Rails.logger.info("[GraphQL] GraphQL query made #{count} SELECT queries")
+  end
+
+  def track_active_record_instantiations
+    count = 0
+
+    callback = ->(_name, _started, _finished, _unique_id, payload) {
+      count += payload[:record_count] || 0
+    }
+
+    ActiveSupport::Notifications.subscribed(callback, "instantiation.active_record") do
+      yield
+    end
+
+    Rails.logger.info("[GraphQL] Instantiated #{count} ActiveRecord objects")
   end
 
 
