@@ -4,7 +4,11 @@ Experimental repo to test GraphQL batch loading patterns.
 
 ## Sample Query
 
-Try this out in local [GraphiQL](http://127.0.0.1:3000/graphiql):
+Try this out in local [GraphiQL](http://127.0.0.1:3000/graphiql)
+
+### Association Field
+
+Plain data, nothing fancy
 
 ```
 {
@@ -45,4 +49,39 @@ Try this out in local [GraphiQL](http://127.0.0.1:3000/graphiql):
 }
 ```
 
-It should have ~22 queries if this works properly. Need to add tests to verify
+It should have ~9 queries if this works properly. Need to add tests to verify
+
+### Connections
+
+```
+{
+  posts {
+    id
+    title
+    commentsConnection(first: 5) {
+      edges {
+        node {
+          id
+          body
+          spam
+          author {
+            id
+            name
+            profile {
+              id
+              bio
+            }
+          }
+          likes {
+            id
+            user {
+              id
+              name
+            }
+          }
+        }
+      }
+    }
+  }
+}
+```

@@ -15,3 +15,14 @@
     Tag.create!(name: Faker::Lorem.word, post: post)
   end
 end
+
+# Add spam
+Post.find_each do |post|
+  5.times do
+    post.comments.create!(
+      body: Faker::Lorem.sentence,
+      author: Author.order("RANDOM()").first,
+      spam: true
+    )
+  end
+end

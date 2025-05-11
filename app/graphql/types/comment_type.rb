@@ -2,6 +2,7 @@ module Types
   class CommentType < Types::BaseObject
     field :id, ID, null: false
     field :body, String, null: true
+    field :spam, Boolean, null: true
 
     association_field :post, type: Types::PostType, null: true
     association_field :likes, type: [ Types::LikeType ], null: true

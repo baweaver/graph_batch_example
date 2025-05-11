@@ -24,6 +24,7 @@ gem "graphql-batch"
 gem "faker" # for seeding
 gem "bullet" # for N+1 detection in dev
 gem "ar_lazy_preload", "~> 2.1"
+gem "sorbet-runtime"
 
 
 # Use Active Model has_secure_password [https://guides.rubyonrails.org/active_model_basics.html#securepassword]
@@ -58,6 +59,9 @@ group :development, :test do
 
   # Omakase Ruby styling [https://github.com/rails/rubocop-rails-omakase/]
   gem "rubocop-rails-omakase", require: false
+
+  gem "rspec-rails", "~> 6.0"
+  gem "factory_bot_rails", "~> 6.0"
 end
 
 group :development do
