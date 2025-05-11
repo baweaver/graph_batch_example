@@ -3,6 +3,9 @@ module Types
     field :id, ID, null: false
     field :name, String, null: true
 
-    association_field :profile, type: Types::ProfileType, null: true
+    flagged_association_field :profile,
+      type: Types::ProfileType,
+      null: true,
+      original_method: -> { object.profile }
   end
 end

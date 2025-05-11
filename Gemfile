@@ -74,5 +74,6 @@ group :test do
   gem "capybara"
   gem "selenium-webdriver"
   gem "shoulda-matchers", "~> 5.0"
+  gem "ar-query-matchers"
 end
 gem "graphiql-rails", group: :development

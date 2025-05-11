@@ -27,6 +27,39 @@ module Helpers
       params(
         name: T.any(String, Symbol),
         type: T.untyped,
+        original_method: T.proc.params(args: T.untyped).returns(T.untyped),
+        null: T::Boolean,
+        options: T::Hash[Symbol, T.untyped],
+        block: T.nilable(T.proc.void)
+      ).void
+    end
+    def flagged_association_field(
+      name,
+      type:,
+      original_method:,
+      null: true,
+      **options,
+      &block
+    )
+      field name, type, null: null, **options.merge(extras: [ :lookahead ]) do
+        instance_eval(&block) if block
+      end
+
+      define_method(name) do |lookahead:, **args|
+        if StupidFlags.enabled?(:association_loader)
+          context.dataloader
+            .with(Loaders::AssociationDataloaderWithLookahead, name)
+            .load_with_lookahead(object, lookahead)
+        else
+          instance_exec(**args, &original_method)
+        end
+      end
+    end
+
+    sig do
+      params(
+        name: T.any(String, Symbol),
+        type: T.untyped,
         null: T::Boolean,
         max_page_size: T.nilable(Integer),
         scoped: T.nilable(

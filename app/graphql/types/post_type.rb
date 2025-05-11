@@ -3,9 +3,20 @@ module Types
     field :id, ID, null: false
     field :title, String, null: true
 
-    association_field :tags, type: [ Types::TagType ], null: true
-    association_field :profile, type: Types::ProfileType, null: true
-    association_field :comments, type: [ Types::CommentType ], null: true
+    flagged_association_field :tags,
+      type: [ Types::TagType ],
+      null: true,
+      original_method: -> { object.tags }
+
+    flagged_association_field :profile,
+      type: Types::ProfileType,
+      null: true,
+      original_method: -> { object.profile }
+
+    flagged_association_field :comments,
+      type: [ Types::CommentType ],
+      null: true,
+      original_method: -> { object.comments }
 
     association_connection :comments,
       type: Types::CommentType,
