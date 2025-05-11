@@ -6,6 +6,103 @@ This repository demonstrates advanced GraphQL patterns in a Ruby on Rails applic
 
 The application models a blogging platform with entities like `Author`, `Post`, `Comment`, `Profile`, and `Like`. It leverages GraphQL-Ruby's dataloader, lookahead features, and custom helpers to optimize query performance and maintain a clean schema design.
 
+### Why Aren't You Using X?
+
+A lot of the existing patterns do not seem to handle dynamic preloads well, or tend
+to be very cumbersome to use.
+
+#### Shopify's [GraphQL Batch Loader](https://github.com/Shopify/graphql-batch)
+
+This seems to have predated the Dataloader pattern in the main Ruby GraphQL gem
+though was very likely the inspiration for it. I was not fond of some of the
+nested nature of association queries:
+
+```ruby
+def product_image(id:)
+  RecordLoader.for(Product).load(id).then do |product|
+    RecordLoader.for(Image).load(product.image_id)
+  end
+end
+```
+
+This felt very manual, especially for deeply nested associations which can
+become very common in larger applications. Perhaps I was using it wrong but
+given Dataloader being introduced in the interim it made more sense for me to
+try something else out.
+
+#### EvilMartian's [ar_lazy_preload](https://github.com/DmitryTsepelev/ar_lazy_preload)
+
+This one I liked a lot more, it got to the point and took care of a lot of
+detailts that could reasonably be implied.
+
+```ruby
+users = User.lazy_preload(:posts).limit(10)  # => SELECT * FROM users LIMIT 10
+users.map(&:first_name)
+```
+
+The kicker was this:
+
+```ruby
+ArLazyPreload.config.auto_preload = true
+```
+
+...which did things automatically. The problem for me was that it monkeypatched
+ActiveRecord which meant it would likely be difficult to maintain and upgrade
+some time in the future, which is something I'd like to avoid for any sufficiently
+large Rails application that's likely to last several more years.
+
+#### GraphQL [DataLoader](https://graphql-ruby.org/dataloader/overview.html)
+
+Rather than promise-based this is fiber-based and is explicitly inspired by
+Shopify's gem:
+
+```ruby
+field :is_following, Boolean, null: false do
+  argument :follower_handle, String
+  argument :followed_handle, String
+end
+
+def is_following(follower_handle:, followed_handle:)
+  follower, followed = dataloader
+    .with(Sources::UserByHandle)
+    .load_all([follower_handle, followed_handle])
+
+  followed && follower && follower.follows?(followed)
+end
+```
+
+This got real close to what I was looking for, but I also wanted it to
+just figure out some of the associations dynamically and reduce things down
+to a single-line if at all possible. It's still the base for what I have here.
+
+#### Where We Are Here
+
+Just this for a nested type:
+
+```ruby
+association_field :tags, type: [ Types::TagType ], null: true
+```
+
+...or if you need pagination?:
+
+```ruby
+association_connection :comments,
+  type: Types::CommentType,
+  null: false,
+  max_page_size: 25,
+  scoped: ->(scope, args, ctx) {
+    scope.where(spam: false).order(created_at: :desc)
+  } do
+    argument :not_spam, Boolean, required: false
+  end
+```
+
+You can still pass arguments and other context, but now the in-place code
+required has been reduced to a few lines.
+
+Granted, this is heavily experimental at the current time, and I'm still
+exploring a lot more around this domain to see how it can be further refined.
+
 ## Key GraphQL Patterns
 
 ### 1. Association Dataloader with Lookahead
