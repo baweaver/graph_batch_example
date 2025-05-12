@@ -8,6 +8,32 @@ class GraphqlController < ApplicationController
 
   around_action :log_sql_queries
   around_action :track_active_record_instantiations
+  around_action :track_gc_and_memory_usage
+
+  def execute
+    variables = prepare_variables(params[:variables])
+    query = params[:query]
+    operation_name = params[:operationName]
+
+    context = {
+      # Query context goes here, for example:
+      # current_user: current_user,
+    }
+
+    result = GraphBatchSchema.execute(
+      query,
+      variables: variables,
+      context: context,
+      operation_name: operation_name
+    )
+
+    render json: result
+  rescue StandardError => e
+    raise e unless Rails.env.development?
+    handle_error_in_development(e)
+  end
+
+  private
 
   def log_sql_queries
     count = 0
@@ -36,31 +62,21 @@ class GraphqlController < ApplicationController
     Rails.logger.info("[GraphQL] Instantiated #{count} ActiveRecord objects")
   end
 
+  def track_gc_and_memory_usage
+    gc_start = GC.stat
 
-  def execute
-    variables = prepare_variables(params[:variables])
-    query = params[:query]
-    operation_name = params[:operationName]
+    yield
 
-    context = {
-      # Query context goes here, for example:
-      # current_user: current_user,
+    gc_end = GC.stat
+
+    gc_diff = {
+      count: gc_end[:count] - gc_start[:count],
+      major_gc: gc_end[:major_gc_count] - gc_start[:major_gc_count],
+      time: gc_end[:time] - gc_start[:time]
     }
 
-    result = GraphBatchSchema.execute(
-      query,
-      variables: variables,
-      context: context,
-      operation_name: operation_name
-    )
-
-    render json: result
-  rescue StandardError => e
-    raise e unless Rails.env.development?
-    handle_error_in_development(e)
+    Rails.logger.info("[GraphQL] GC: #{gc_diff}")
   end
-
-  private
 
   # Handle variables in form data, JSON body, or a blank value
   def prepare_variables(variables_param)
