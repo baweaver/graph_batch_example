@@ -19,7 +19,7 @@ gem "jbuilder"
 
 # Our gems
 
-gem "graphql", "~> 2.1"
+gem "graphql", "~> 2.5"
 gem "graphql-batch"
 gem "faker" # for seeding
 gem "bullet" # for N+1 detection in dev
